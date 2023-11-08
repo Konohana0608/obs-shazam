@@ -1,10 +1,11 @@
 import os
+import time
 import asyncio
 import shazamio
 import numpy as np
-import pyaudio
 import wave
 import inspect
+import threading
 import obspython as obs
 import sounddevice as sd
 from scipy.io.wavfile import write
@@ -21,6 +22,9 @@ settings_file_name = f"{file_name}.json"
 
 # Define the path to the output .txt file
 output_file = "song_metadata.txt"
+
+running = False
+interval_seconds = 10
 
 # Initialize Shazam API
 shazam = shazamio.Shazam()
@@ -91,50 +95,7 @@ async def recognize_audio(audio_data):
         print(f"Error: {e}")
 
 async def record_audio_async(filename, duration=10, sample_rate=44100):
-    """
-    sound = True
-    CHUNK = 1024
-    FORMAT = pyaudio.paInt16
-    CHANNELS = 2
-    RATE = 48000
-    RECORD_SECONDS = 10
-    WAVE_OUTPUT_FILENAME = "output.wav"
-
-    p = pyaudio.PyAudio()
-
-    for i in range(p.get_device_count()):
-        print(p.get_device_info_by_index(i))
-
-    stream = p.open(
-        format=FORMAT,
-        channels=CHANNELS,
-        rate=RATE,
-        input=True,
-        input_device_index=31,
-        frames_per_buffer=CHUNK
-    )
-
-    print("recording")
-
-    frames = []
-    for i in range(0, int(RATE / CHUNK * RECORD_SECONDS)):
-        data = stream.read(CHUNK)
-        frames.append(data)
-
-    print("done recording")
-
-    stream.stop_stream()
-    stream.close()
-    p.terminate()
-
-    wf = wave.open(WAVE_OUTPUT_FILENAME, "wb")
-    wf.setnchannels(CHANNELS)
-    wf.setsampwidth(p.get_sample_size(FORMAT))
-    wf.setframerate(RATE)
-    wf.writeframes(b''.join(frames))
-    wf.close()
-    """
-    print("start recording")
+    
     try:
         print("Recording...")
 
@@ -202,67 +163,65 @@ def audio_capture_callback(source, data):
 # Define the callback to update song metadata
 def update_song_metadata():
     global song_metadata
-    print(song_metadata)
-    cd = stats_dict["text_output"]
-    audio_source_name = stats_dict["audio_source"]
+    global running
 
-    print(cd)
-    print(type(cd))
-    """
-    print(audio_source_name)
-    print(type(audio_source_name))
-    audio_source = obs.obs_get_source_by_name(str(audio_source_name))
-    print(audio_source)
-    """
-    # source_name = obs.obs_data_get_string(cd, "source")
-    try:
-        # audio_source = obs.obs_get_source_by_name(stats_dict["audio_source"])
-        loop = asyncio.get_event_loop_policy().get_event_loop()
-        print("Start recoring audio")
-        loop.run_until_complete(
-            record_audio_async(
-                'F:\Melanie\OBS\python_code\obs-shazam\output.wav',
-                duration=10,
-                sample_rate=48000
+    while running:
+        print(song_metadata)
+        cd = stats_dict["text_output"]
+        audio_source_name = stats_dict["audio_source"]
+
+        """
+        print(audio_source_name)
+        print(type(audio_source_name))
+        audio_source = obs.obs_get_source_by_name(str(audio_source_name))
+        print(audio_source)
+        """
+        # source_name = obs.obs_data_get_string(cd, "source")
+        try:
+            
+            loop = asyncio.new_event_loop()
+            asyncio.set_event_loop(loop)
+
+            loop.run_until_complete(
+                record_audio_async(
+                    'F:\Melanie\OBS\python_code\obs-shazam\output.wav',
+                    duration=10,
+                    sample_rate=48000
+                )
             )
-        )
-        print("Start recoring audio")
-        loop.run_until_complete(
-            recognize_audio(
-                'F:\Melanie\OBS\python_code\obs-shazam\output.wav'
+
+            loop.run_until_complete(
+                recognize_audio(
+                    'F:\Melanie\OBS\python_code\obs-shazam\output.wav'
+                )
             )
+
+        except Exception as e:
+            print("exception occured")
+            print(e)
+
+        if song_metadata:
+            metadata_text = f"  {song_metadata}"
+            source = obs.obs_get_source_by_name(cd)
+            if source is not None:
+                settings = obs.obs_data_create()
+                obs.obs_data_set_string(settings, "text", metadata_text)
+                obs.obs_source_update(source, settings)
+                obs.obs_data_release(settings)
+                obs.obs_source_release(source)
+
+        time.sleep(interval_seconds)
+
+        """
+        audio_data = obs.audio_output_get_data()
+        audio_data = obs.obs_source_add_audio_capture_callback(
+            source=audio_source,
+            callback=audio_capture_callback,
+            param=None,
         )
-    except Exception as e:
-        print("exception occured")
-        print(e)
-    
-    print(song_metadata)
-    print("________________________________")
-
-    if song_metadata:
-        metadata_text = f"  {song_metadata}"
-        source = obs.obs_get_source_by_name(cd)
-        if source is not None:
-            settings = obs.obs_data_create()
-            obs.obs_data_set_string(settings, "text", metadata_text)
-            obs.obs_source_update(source, settings)
-            obs.obs_data_release(settings)
-            obs.obs_source_release(source)
-
-            # Write song metadata to a .txt file
-            with open(output_file, "w") as file:
-                file.write(metadata_text)
-
-    """
-    audio_data = obs.audio_output_get_data()
-    audio_data = obs.obs_source_add_audio_capture_callback(
-        source=audio_source,
-        callback=audio_capture_callback,
-        param=None,
-    )
-    """
-    # obs_source_remove_audio_capture_callback
-    """
+        """
+        # obs_source_remove_audio_capture_callback
+        """
     # Check if audio data is available
     if audio_data is not None:
         # Convert audio data to bytes
@@ -320,10 +279,20 @@ def script_description():
     return "Analyze sound from a specified source and write song metadata to a .txt file."
 
 
-def button_pressed(props, prop):
+def start_button_pressed(props, prop):
     print("Button Pressed")
     # obs.timer_add(update_song_metadata, 1000)
-    update_song_metadata()
+    global running
+    if not running:
+        running = True
+        t = threading.Thread(target=update_song_metadata)
+        t.daemon = True
+        t.start()
+
+
+def stop_button_pressed(props, prop):
+    global running
+    running = False
 
 
 def callback(props, prop, *args):
@@ -359,8 +328,21 @@ def script_properties():
     )
     populate_list_property_with_source_names(text_output)
 
-    b = obs.obs_properties_add_button(
-        props, "button", "refresh pressed 0 times", button_pressed
+    obs.obs_properties_add_int(
+        props=props,
+        name="interval_seconds",
+        description="Interval (seconds)",
+        min=1,
+        max=86400,
+        step=1
+    )
+
+    start_button = obs.obs_properties_add_button(
+        props, "button", "Start", start_button_pressed
+    )
+
+    stop_button = obs.obs_properties_add_button(
+        props, "button", "Stop", stop_button_pressed
     )
 
     # obs.obs_property_set_modified_callback(b, callback)
@@ -372,11 +354,13 @@ def script_properties():
 
 # Define the script save function
 def script_save(settings):
-    pass
+    obs.obs_data_set_int(settings, "interval_seconds", interval_seconds)
 
 
 # Initialize the script
 def script_load(settings):
+    global interval_seconds
+
     current_scene = obs.obs_frontend_get_current_scene()
     source = obs.obs_get_source_by_name("Audio Output Capture")
     scene = obs.obs_scene_from_source(current_scene)
@@ -384,8 +368,13 @@ def script_load(settings):
     print(source)
     print(scene_item)
 
+    interval_seconds = obs.obs_data_get_int(settings, "interval_seconds")
+
 
 def script_update(settings):
+    global interval_seconds
+    
+    interval_seconds = obs.obs_data_get_int(settings, "interval_seconds")
     audio_source = obs.obs_data_get_string(settings, "source")
     text_output = obs.obs_data_get_string(settings, "textout")
     stats_dict["audio_source"] = audio_source.split("|")[0]
