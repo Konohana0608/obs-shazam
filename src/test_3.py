@@ -1,6 +1,38 @@
 import pyaudio
 import wave
+import asyncio
 
+sample_rate = 48000  # Sample rate
+duration = 10  # Duration of recording
+
+print("Recording...")
+
+# Initialize an empty array to store audio data
+audio_data = []
+
+def callback(indata, frames, time, status):
+    if status:
+        print(f"Error in audio input: {status}")
+    if indata.any():
+        audio_data.append(indata.copy())
+
+# Open an audio input stream
+with sd.InputStream(callback=callback, channels=2, samplerate=sample_rate):
+    await asyncio.sleep(duration)
+
+print("Recording complete.")
+print(audio_data)
+
+# Save the recorded audio to a WAV file
+if audio_data:
+    print('in if statement')
+    audio_data = np.concatenate(audio_data, axis=0)
+    print(audio_data)
+    with wave.open("output.wav", 'wb') as wf:
+        wf.setnchannels(2)
+        wf.setsampwidth(2)
+        wf.setframerate(sample_rate)
+        wf.writeframes(audio_data.tobytes())
 
 sound  = True
 CHUNK = 1024
@@ -26,8 +58,8 @@ print("recording")
 
 frames = []
 for i in range(0, int(RATE / CHUNK * RECORD_SECONDS)):
- data = stream.read(CHUNK)
- frames.append(data)
+    data = stream.read(CHUNK)
+    frames.append(data)
 
 print("done recording")
 

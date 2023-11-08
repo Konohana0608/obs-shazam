@@ -1,8 +1,13 @@
 import os
 import asyncio
 import shazamio
+import numpy as np
+import pyaudio
+import wave
 import inspect
 import obspython as obs
+import sounddevice as sd
+from scipy.io.wavfile import write
 
 from platform import system
 from os import makedirs, path
@@ -20,12 +25,10 @@ output_file = "song_metadata.txt"
 # Initialize Shazam API
 shazam = shazamio.Shazam()
 
-stats_dict = {
-    "audio_source": None,
-}
-
 song_metadata = None
 recognition_task = None
+
+stats_dict = {}
 
 
 # -------------------------------------------------------------------
@@ -75,27 +78,114 @@ SOURCES = CaptureSources(
     applesilicon=AppleSiliconCaptureSources({'screen_capture','screen_capture'})
 )
 
+
 # -------------------------------------------------------------------
-async def recognize_audio(audio_data, source_name):
+async def recognize_audio(audio_data):
     global song_metadata
-    while song_metadata is None:
-        try:
-            song_metadata = await shazam.identify_song(audio_data)
-            await asyncio.sleep(1)  # Adjust the polling interval as needed
-        except Exception as e:
-            song_metadata = None
-    print(song_metadata)
-    # update_song_metadata(source_name)
+    temp_song_metadata = None
+    try:
+        temp_song_metadata = await shazam.recognize_song(audio_data)
+        if temp_song_metadata:
+            song_metadata = f"Song: {temp_song_metadata['track']['title']} by {temp_song_metadata['track']['subtitle']}"
+    except Exception as e:
+        print(f"Error: {e}")
+
+async def record_audio_async(filename, duration=10, sample_rate=44100):
+    """
+    sound = True
+    CHUNK = 1024
+    FORMAT = pyaudio.paInt16
+    CHANNELS = 2
+    RATE = 48000
+    RECORD_SECONDS = 10
+    WAVE_OUTPUT_FILENAME = "output.wav"
+
+    p = pyaudio.PyAudio()
+
+    for i in range(p.get_device_count()):
+        print(p.get_device_info_by_index(i))
+
+    stream = p.open(
+        format=FORMAT,
+        channels=CHANNELS,
+        rate=RATE,
+        input=True,
+        input_device_index=31,
+        frames_per_buffer=CHUNK
+    )
+
+    print("recording")
+
+    frames = []
+    for i in range(0, int(RATE / CHUNK * RECORD_SECONDS)):
+        data = stream.read(CHUNK)
+        frames.append(data)
+
+    print("done recording")
+
+    stream.stop_stream()
+    stream.close()
+    p.terminate()
+
+    wf = wave.open(WAVE_OUTPUT_FILENAME, "wb")
+    wf.setnchannels(CHANNELS)
+    wf.setsampwidth(p.get_sample_size(FORMAT))
+    wf.setframerate(RATE)
+    wf.writeframes(b''.join(frames))
+    wf.close()
+    """
+    print("start recording")
+    try:
+        print("Recording...")
+
+        # Initialize an empty array to store audio data
+        audio_data = []
+
+        def callback(indata, frames, time, status):
+            if status:
+                print(f"Error in audio input: {status}")
+            if indata.any():
+                audio_data.append(indata.copy())
+
+        # Open an audio input stream
+        with sd.InputStream(
+            callback=callback, 
+            channels=2,
+            samplerate=sample_rate,
+            dtype=np.int16
+            ):
+            await asyncio.sleep(duration)
+
+        print("Recording complete.")
+
+        # Save the recorded audio to a WAV file
+        if audio_data:
+            audio_data = np.concatenate(audio_data, axis=0)
+            with wave.open(filename, 'wb') as wf:
+                wf.setnchannels(2)
+                wf.setsampwidth(2)
+                wf.setframerate(sample_rate)
+                wf.writeframes(audio_data.tobytes())
+    except Exception as e:
+        print(e)
+
 
 # Define the audio capture callback
-def audio_capture_callback(cd, data):
-    source_name = obs.obs_data_get_string(cd, "source")
+"""
+def audio_capture_callback(source, data):
+    print("in audio capture callback")
+    # source_name = obs.obs_data_get_string(cd, "source")
+    print(samples)
+    print(timestamp)
+    print(type(data))
+    print(len(data))
+    assert False
     audio_data = data.data.tobytes()
 
     global recognition_task
     if recognition_task is None or recognition_task.done():
         recognition_task = asyncio.ensure_future(recognize_audio(audio_data, source_name))
-
+"""
 """
 def audio_capture_callback(source, data):
     # Process the audio data here
@@ -111,19 +201,52 @@ def audio_capture_callback(source, data):
 
 # Define the callback to update song metadata
 def update_song_metadata():
+    global song_metadata
+    print(song_metadata)
     cd = stats_dict["text_output"]
+    audio_source_name = stats_dict["audio_source"]
+    """
+    print(cd)
+    print(type(cd))
+    print(audio_source_name)
+    print(type(audio_source_name))
+    audio_source = obs.obs_get_source_by_name(str(audio_source_name))
+    print(audio_source)
+    """
     # source_name = obs.obs_data_get_string(cd, "source")
     try:
-        audio_source = obs.obs_get_source_by_name(stats_dict["audio_source"])
-    except:
+        # audio_source = obs.obs_get_source_by_name(stats_dict["audio_source"])
+        loop = asyncio.get_event_loop_policy().get_event_loop()
+        print("Start recoring audio")
+        loop.run_until_complete(
+            record_audio_async(
+                'F:\Melanie\OBS\python_code\obs-shazam\output.wav',
+                duration=10,
+                sample_rate=48000
+            )
+        )
+        print("Start recoring audio")
+        loop.run_until_complete(
+            recognize_audio(
+                'F:\Melanie\OBS\python_code\obs-shazam\output.wav'
+            )
+        )
+    except Exception as e:
         print("exception occured")
+        print(e)
+    
+    print(song_metadata)
+    print("________________________________")
 
-    # audio_data = obs.audio_output_get_data()
+    """
+    audio_data = obs.audio_output_get_data()
     audio_data = obs.obs_source_add_audio_capture_callback(
-        audio_source,
-        audio_capture_callback,
-        None
+        source=audio_source,
+        callback=audio_capture_callback,
+        param=None,
     )
+    """
+    print("pizza")
     # obs_source_remove_audio_capture_callback
     """
     # Check if audio data is available
@@ -196,9 +319,12 @@ def populate_list_property_with_source_names(list_property):
 def script_description():
     return "Analyze sound from a specified source and write song metadata to a .txt file."
 
+
 def button_pressed(props, prop):
     print("Button Pressed")
-    obs.timer_add(update_song_metadata, 1000)
+    # obs.timer_add(update_song_metadata, 1000)
+    update_song_metadata()
+
 
 def callback(props, prop, *args):
     print("Executing Callback")
@@ -243,9 +369,11 @@ def script_properties():
 
     return props
 
+
 # Define the script save function
 def script_save(settings):
     pass
+
 
 # Initialize the script
 def script_load(settings):
@@ -255,11 +383,12 @@ def script_load(settings):
     scene_item = obs.obs_scene_find_source(scene, "Audio Output Capture")
     print(source)
     print(scene_item)
-    
+
+
 def script_update(settings):
     audio_source = obs.obs_data_get_string(settings, "source")
     text_output = obs.obs_data_get_string(settings, "textout")
-    stats_dict["audio_output"] = audio_source.split("|")[0]
+    stats_dict["audio_source"] = audio_source.split("|")[0]
     stats_dict["text_output"] = text_output.split("|")[0]
 
 
@@ -269,6 +398,7 @@ def script_unload():
     global recognition_task
     if recognition_task:
         recognition_task.cancel()
+
 
 # Register the script
 # obs.obs_register_script_description("Song Metadata Updater", script_description)
