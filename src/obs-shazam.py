@@ -205,9 +205,10 @@ def update_song_metadata():
     print(song_metadata)
     cd = stats_dict["text_output"]
     audio_source_name = stats_dict["audio_source"]
-    """
+
     print(cd)
     print(type(cd))
+    """
     print(audio_source_name)
     print(type(audio_source_name))
     audio_source = obs.obs_get_source_by_name(str(audio_source_name))
@@ -238,6 +239,20 @@ def update_song_metadata():
     print(song_metadata)
     print("________________________________")
 
+    if song_metadata:
+        metadata_text = f"  {song_metadata}"
+        source = obs.obs_get_source_by_name(cd)
+        if source is not None:
+            settings = obs.obs_data_create()
+            obs.obs_data_set_string(settings, "text", metadata_text)
+            obs.obs_source_update(source, settings)
+            obs.obs_data_release(settings)
+            obs.obs_source_release(source)
+
+            # Write song metadata to a .txt file
+            with open(output_file, "w") as file:
+                file.write(metadata_text)
+
     """
     audio_data = obs.audio_output_get_data()
     audio_data = obs.obs_source_add_audio_capture_callback(
@@ -246,7 +261,6 @@ def update_song_metadata():
         param=None,
     )
     """
-    print("pizza")
     # obs_source_remove_audio_capture_callback
     """
     # Check if audio data is available
@@ -259,20 +273,6 @@ def update_song_metadata():
             song_metadata = shazam.identify_song(audio_bytes)
         except Exception as e:
             song_metadata = None
-
-        if song_metadata:
-            metadata_text = f"Currently Playing: {song_metadata['title']} by {song_metadata['artists']}"
-            source = obs.obs_get_source_by_name(source_name)
-            if source is not None:
-                settings = obs.obs_data_create()
-                obs.obs_data_set_string(settings, "text", metadata_text)
-                obs.obs_source_update(source, settings)
-                obs.obs_data_release(settings)
-                obs.obs_source_release(source)
-
-                # Write song metadata to a .txt file
-                with open(output_file, "w") as file:
-                    file.write(metadata_text)
     """
 
 # -------------------------------------------------------------------
