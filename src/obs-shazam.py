@@ -29,7 +29,8 @@ interval_seconds = 10
 # Initialize Shazam API
 shazam = shazamio.Shazam()
 
-song_metadata = None
+song_metadata: str = None
+song_coverart: str = None
 recognition_task = None
 
 stats_dict = {}
@@ -86,11 +87,14 @@ SOURCES = CaptureSources(
 # -------------------------------------------------------------------
 async def recognize_audio(audio_data):
     global song_metadata
+    global song_coverart
     temp_song_metadata = None
     try:
         temp_song_metadata = await shazam.recognize_song(audio_data)
         if temp_song_metadata:
+            print(temp_song_metadata)
             song_metadata = f"Song: {temp_song_metadata['track']['title']} by {temp_song_metadata['track']['subtitle']}"
+            song_coverart = temp_song_metadata['track']['images']['coverart']
     except Exception as e:
         print(f"Error: {e}")
 
@@ -163,12 +167,13 @@ def audio_capture_callback(source, data):
 # Define the callback to update song metadata
 def update_song_metadata():
     global song_metadata
+    global song_coverart
     global running
 
     while running:
         print(song_metadata)
         cd = stats_dict["text_output"]
-        audio_source_name = stats_dict["audio_source"]
+        browser_s = stats_dict["browser_source"]
 
         """
         print(audio_source_name)
@@ -206,6 +211,18 @@ def update_song_metadata():
             if source is not None:
                 settings = obs.obs_data_create()
                 obs.obs_data_set_string(settings, "text", metadata_text)
+                obs.obs_source_update(source, settings)
+                obs.obs_data_release(settings)
+                obs.obs_source_release(source)
+
+        
+        if song_coverart:
+            source = obs.obs_get_source_by_name(browser_s)
+            if source is not None:
+                settings = obs.obs_data_create()
+                obs.obs_data_set_string(settings, "url", song_coverart)
+                obs.obs_data_set_int(settings, "width", 400)
+                obs.obs_data_set_int(settings, "height", 400)
                 obs.obs_source_update(source, settings)
                 obs.obs_data_release(settings)
                 obs.obs_source_release(source)
@@ -312,8 +329,8 @@ def script_properties():
     props = obs.obs_properties_create()
     sources = obs.obs_properties_add_list(
         props,
-        "source",
-        "Audio Source",
+        "browser_source",
+        "Browser Source",
         obs.OBS_COMBO_TYPE_LIST,
         obs.OBS_COMBO_FORMAT_STRING,
     )
@@ -375,9 +392,9 @@ def script_update(settings):
     global interval_seconds
     
     interval_seconds = obs.obs_data_get_int(settings, "interval_seconds")
-    audio_source = obs.obs_data_get_string(settings, "source")
+    browser_source = obs.obs_data_get_string(settings, "browser_source")
     text_output = obs.obs_data_get_string(settings, "textout")
-    stats_dict["audio_source"] = audio_source.split("|")[0]
+    stats_dict["browser_source"] = browser_source.split("|")[0]
     stats_dict["text_output"] = text_output.split("|")[0]
 
 
